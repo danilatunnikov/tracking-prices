@@ -1,8 +1,11 @@
 import asyncio
 import logging
+import os
+
 from aiogram import Bot, Dispatcher
 from aiogram.exceptions import TelegramUnauthorizedError
 from aiogram.types import BotCommand
+from aiohttp import web
 from dotenv import load_dotenv
 from config import BOT_TOKEN, CHECK_INTERVAL, BOT_COMMANDS
 from database import init_db, get_all_items, update_price
@@ -17,7 +20,23 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 dp.include_router(router)
 
+async def handle_health_check(request):
+    """Возвращает статус 200 для Render, чтобы контейнер не падал"""
+    return web.Response(text="Бот успешно запущен и работает в Docker!", status=200)
 
+
+async def start_health_server():
+    """Запускает фоновый веб-сервер на порту от Render"""
+    app = web.Application()
+    app.router.add_get('/', handle_health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+
+    # Render передает порт в переменную PORT. Если запускаешь локально — включится 10000
+    port = int(os.getenv("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logger.info(f"🌐 Фоновый Health-Check сервер запущен на порту {port}")
 async def set_bot_commands():
     """Настраивает команды в меню бота"""
     commands = [
@@ -97,8 +116,10 @@ async def main():
 
     await init_db()
     await set_bot_commands()  # Настраиваем команды
-    asyncio.create_task(scheduled_check())
 
+    asyncio.create_task(start_health_server())
+
+    asyncio.create_task(scheduled_check())
     try:
         await dp.start_polling(bot)
     except TelegramUnauthorizedError:
