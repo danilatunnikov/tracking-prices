@@ -1,12 +1,183 @@
+# import asyncio
+# import aiohttp
+# from typing import Optional
+# from bs4 import BeautifulSoup
+# from config import HEADERS, REQUEST_TIMEOUT, ALLOWED_DOMAINS
+# from urllib.parse import urlparse
+# import logging
+#
+# # Используем логгер, настроенный в bot.py
+# logger = logging.getLogger(__name__)
+#
+#
+# async def is_safe_url(url: str) -> bool:
+#     """Проверка безопасности ссылки"""
+#     try:
+#         parsed = urlparse(url)
+#         if parsed.scheme != 'https':
+#             return False
+#         # Проверка домена из белого списка
+#         return any(domain in parsed.netloc for domain in ALLOWED_DOMAINS)
+#     except Exception:
+#         return False
+#
+#
+# async def fetch_page(url: str) -> Optional[str]:
+#     """Скачивание страницы с защитой от блокировок и заглушек"""
+#     if not await is_safe_url(url):
+#         logger.warning(f"⚠️ URL не в белом списке: {url}")
+#         return None
+#
+#     try:
+#         async with aiohttp.ClientSession() as session:
+#             async with session.get(
+#                     url,
+#                     headers=HEADERS,
+#                     timeout=REQUEST_TIMEOUT,
+#                     allow_redirects=True
+#             ) as response:
+#
+#                 if response.status != 200:
+#                     logger.warning(f"⚠️ Ошибка HTTP {response.status} при запросе к {url[:40]}...")
+#                     return None
+#
+#                 html = await response.text()
+#
+#                 # --- ПРОВЕРКА НА БЛОКИРОВКУ / ЗАГЛУШКУ ---
+#                 html_lower = html.lower()
+#
+#                 # Ключевые маркеры страниц блокировок и капчи
+#                 block_markers = [
+#                     "captcha",
+#                     "cloudflare",
+#                     "робот",
+#                     "доступ ограничен",
+#                     "блокиров",
+#                     "checking your browser",
+#                     "verify you are human"
+#                 ]
+#
+#                 # Ищем маркер в тексте страницы
+#                 detected_marker = next((m for m in block_markers if m in html_lower), None)
+#
+#                 # Если страница подозрительно короткая (страницы капчи обычно весят мало)
+#                 is_too_short = len(html) < 5000
+#
+#                 if detected_marker or is_too_short:
+#                     reason = f"найден маркер '{detected_marker}'" if detected_marker else f"размер HTML всего {len(html)} симв."
+#                     logger.warning(f"🛑 ЗАГЛУШКА ИЛИ БЛОКИРОВКА ({reason}) на URL: {url}")
+#                     return None
+#                 # ----------------------------------------
+#
+#                 return html
+#
+#     except aiohttp.ClientError as e:
+#         logger.error(f"🌐 Ошибка сети при запросе к {url[:40]}...: {e}")
+#     except Exception as e:
+#         logger.error(f"💥 Ошибка скачивания страницы {url[:40]}...: {e}")
+#
+#     return None
+#
+#
+# def extract_price_from_text(text: str) -> Optional[float]:
+#     """
+#     Извлекает минимальную цену из текста.
+#     Поддерживает: '3 183,10 – 3 970,00 б.р.', '1200.00 BYN', '999 руб'
+#     """
+#     import re
+#     if not text:
+#         return None
+#
+#     # Ищем все числа с разделителями (пробел/запятая/точка)
+#     pattern = r'(\d+(?:[\s\.]?\d{3})*(?:[,.]\d+)?)'
+#     matches = re.findall(pattern, text)
+#
+#     if not matches:
+#         return None
+#
+#     # Берём первое найденное число (минимальное в диапазоне)
+#     price_str = matches[0]
+#
+#     # Удаляем пробелы (разделители тысяч) и заменяем запятую на точку
+#     price_str = price_str.replace(' ', '').replace(',', '.')
+#
+#     try:
+#         return float(price_str)
+#     except ValueError:
+#         return None
+#
+#
+# async def get_price(url: str) -> Optional[float]:
+#     """Получение и парсинг цены товара"""
+#     html = await fetch_page(url)
+#     if not html:
+#         # Если fetch_page вернул None (из-за ошибки или блокировки), сразу выходим
+#         return None
+#
+#     domain = urlparse(url).netloc
+#     soup = BeautifulSoup(html, "html.parser")
+#
+#     try:
+#         if '1k.by' in domain:
+#             # Парсинг для 1k.by
+#             price_element = soup.find("span", class_="price") or soup.find("div", class_="price")
+#             if price_element:
+#                 return extract_price_from_text(price_element.text)
+#
+#             # Альтернативный поиск по контенту, если верстка немного отличается
+#             alt_price = soup.find(meta={"property": "product:price:amount"})
+#             if alt_price:
+#                 return float(alt_price["content"])
+#
+#         elif 'shop.by' in domain:
+#             # Парсинг для shop.by
+#             price_element = soup.find("span", class_="price__value") or soup.find("span",
+#                                                                                   class_="PriceBlock__priceValue")
+#             if price_element:
+#                 return extract_price_from_text(price_element.text)
+#
+#             price_meta = soup.find(meta={"itemprop": "price"})
+#             if price_meta:
+#                 return float(price_meta["content"])
+#
+#     except Exception as e:
+#         logger.error(f"💥 Ошибка разбора HTML структуры для {url[:40]}...: {e}")
+#
+#     return None
+#
+#
+# async def get_product_name(url: str) -> str:
+#     """Получение названия товара для инициализации в БД"""
+#     html = await fetch_page(url)
+#     if not html:
+#         return "Неизвестный товар (Ошибка загрузки)"
+#
+#     soup = BeautifulSoup(html, "html.parser")
+#
+#     try:
+#         # Пробуем стандартный тег h1
+#         h1 = soup.find("h1")
+#         if h1:
+#             return h1.text.strip()
+#
+#         # Пробуем OpenGraph тег заголовка
+#         meta_title = soup.find(meta={"property": "og:title"})
+#         if meta_title:
+#             return meta_title["content"].strip()
+#
+#     except Exception:
+#         pass
+#
+#     return "Товар без названия"
 import asyncio
-
 import aiohttp
 from typing import Optional
 from bs4 import BeautifulSoup
-from config import HEADERS, REQUEST_TIMEOUT, ALLOWED_DOMAINS
-from urllib.parse import urlparse
-from utils import make_callback_key
-import hashlib
+from config import HEADERS, REQUEST_TIMEOUT, ALLOWED_DOMAINS, SCRAPER_API_KEY
+from urllib.parse import urlparse, quote_plus
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 async def is_safe_url(url: str) -> bool:
@@ -15,222 +186,111 @@ async def is_safe_url(url: str) -> bool:
         parsed = urlparse(url)
         if parsed.scheme != 'https':
             return False
-        # Проверка домена из белого списка
         return any(domain in parsed.netloc for domain in ALLOWED_DOMAINS)
     except Exception:
         return False
 
 
-async def fetch_page(url: str) -> Optional[str]:
-    """Скачивание страницы с защитой"""
-    print(f"🔍 Проверяю URL: {url}")
+def is_blocked_content(html: str) -> tuple[bool, Optional[str]]:
+    """
+    Внутренняя утилита для проверки контента на блокировку.
+    Возвращает (True, причина), если обнаружена блокировка.
+    """
+    html_lower = html.lower()
 
-    if not await is_safe_url(url):
-        print(f"❌ URL не в белом списке!")
-        return None
-
-    try:
-        print(f"📡 Отправляю запрос к {url}...")
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                    url,
-                    headers=HEADERS,
-                    timeout=REQUEST_TIMEOUT,
-                    allow_redirects=True
-            ) as response:
-                print(f"📡 Статус ответа: {response.status}")
-                # print(f"📡 Заголовки: {dict(response.headers)}")
-
-                if response.status == 200:
-                    html = await response.text()
-                    print(f"✅ Страница загружена, размер: {len(html)} байт")
-                    return html
-                elif response.status == 403:
-                    print("❌ 403 Forbidden — сайт блокирует запрос")
-                elif response.status == 404:
-                    print("❌ 404 Not Found — страница не существует")
-                else:
-                    print(f"❌ Ошибка HTTP {response.status}")
-
-    except asyncio.TimeoutError:
-        print(f"⏱ Таймаут — сайт не ответил за {REQUEST_TIMEOUT} сек")
-    except aiohttp.ClientConnectorError as e:
-        print(f"🌐 Ошибка подключения: {e}")
-    except Exception as e:
-        print(f"💥 Неожиданная ошибка: {type(e).__name__}: {e}")
-
-    return None
-
-
-def parse_price_1kby(html: str) -> Optional[float]:
-    """Парсинг для 1k.by — ищем цену в нескольких местах"""
-    from bs4 import BeautifulSoup
-    soup = BeautifulSoup(html, 'lxml')
-
-    # Пробуем разные селекторы (сайты меняют вёрстку)
-    selectors = [
-        ('div', {'class': 'spec-about__price'}),
-        ('span', {'class': 'product-price'}),
-        ('meta', {'itemprop': 'price'}),
-        ('div', {'data-price': True}),
-        ('span', {'class': 'price-value'}),
-        ('span', {'class': 'price'}),
+    # Ключевые маркеры страниц блокировок и капчи
+    block_markers = [
+        "captcha",
+        "cloudflare",
+        "робот",
+        "доступ ограничен",
+        "блокиров",
+        "checking your browser",
+        "verify you are human"
     ]
 
-    for tag_name, attrs in selectors:
-        elem = soup.find(tag_name, attrs)
-        if elem:
-            # Для <meta> берём content, для остальных — текст
-            text = elem.get('content') or elem.get_text(strip=True)
-            return clean_price(text)
+    detected_marker = next((m for m in block_markers if m in html_lower), None)
+    if detected_marker:
+        return True, f"найден маркер '{detected_marker}'"
 
-    # Fallback: ищем цену регуляркой во всём тексте страницы
-    text = soup.get_text()
-    return clean_price(text)
+    if len(html) < 5000:
+        return True, f"размер HTML слишком мал ({len(html)} симв.)"
+
+    return False, None
 
 
-def parse_price_shopby(html: str) -> Optional[float]:
-    """Парсинг для shop.by"""
-    soup = BeautifulSoup(html, 'lxml')
-
-    # Находим основной элемент с ценой
-    price_block = soup.find('span', class_='PriceBlock__PriceValue')
-
-    if price_block:
-        # Находим все span внутри и берём второй (индекс 1)
-        spans = price_block.find_all('span')
-        if len(spans) >= 2:
-            price_text = spans[1].get_text(strip=True)
-            return clean_price(price_text)
-
-    return None
-
-def parse_price_5element(html: str) -> Optional[float]:
-    soup = BeautifulSoup(html, 'lxml')
-
-    price_block = soup.find('div', class_='p-price__actual')
-
-    if price_block:
-        text = price_block.get_text(strip=True)
-        print(text)
-        return clean_price(text)
-
-    return None
-
-
-def get_product_name_1kby(html: str) -> Optional[str]:
-    """Извлечение названия товара для 1k.by"""
-    soup = BeautifulSoup(html, 'lxml')
-
-    # Ищем h1 внутри div.heading
-    heading_div = soup.find('div', class_='heading')
-    if heading_div:
-        h1_tag = heading_div.find('h1')
-        if h1_tag:
-            name = h1_tag.get_text(strip=True)
-            print(f"🏷 1k.by название: {name}")
-            return name
-
-    # Fallback: ищем просто h1 на странице
-    h1_tag = soup.find('h1')
-    if h1_tag:
-        name = h1_tag.get_text(strip=True)
-        print(f"🏷 1k.by название (fallback): {name}")
-        return name
-
-    print("⚠️ 1k.by название не найдено")
-    return None
-
-
-def get_product_name_shopby(html: str) -> Optional[str]:
-    """Извлечение названия товара для shop.by"""
-    soup = BeautifulSoup(html, 'lxml')
-
-    # Ищем h1
-    h1_tag = soup.find('h1', class_='Page__TitleActivePage', itemprop='name')
-    if h1_tag:
-        name = h1_tag.get_text(strip=True)
-        print(f"🏷 Название: {name}")
-        return name
-
-    return None
-
-
-def get_product_name_5element(html: str) -> Optional[str]:
-    """Извлечение названия товара для 5element.by"""
-    soup = BeautifulSoup(html, 'lxml')
-
-    # Ищем h1 внутри div.heading
-    heading_div = soup.find('div', class_='heading')
-    if heading_div:
-        h1_tag = heading_div.find('h1')
-        if h1_tag:
-            name = h1_tag.get_text(strip=True)
-            print(f"🏷 Название: {name}")
-            return name
-
-    # Fallback: ищем просто h1 на странице
-    h1_tag = soup.find('h1')
-    if h1_tag:
-        name = h1_tag.get_text(strip=True)
-        print(f"🏷 Название (fallback): {name}")
-        return name
-
-    return None
-
-
-def get_product_name(url: str, html: str) -> Optional[str]:
-    """Главная функция для получения названия товара"""
-    from urllib.parse import urlparse
-    domain = urlparse(url).netloc
-
-    if '5element.by' in domain:
-        return get_product_name_5element(html)
-    elif '1k.by' in domain:
-        return get_product_name_1kby(html)
-    elif 'shop.by' in domain:
-        return get_product_name_shopby(html)
-    else:
-        # Универсальный парсер
-        soup = BeautifulSoup(html, 'lxml')
-        h1_tag = soup.find('h1')
-        if h1_tag:
-            return h1_tag.get_text(strip=True)
+async def fetch_page(url: str) -> Optional[str]:
+    """
+    Скачивание страницы.
+    Попытка 1: Напрямую.
+    Попытка 2 (резервная): Через ScraperAPI, если первая попытка заблокирована или упала по ошибке.
+    """
+    if not await is_safe_url(url):
+        logger.warning(f"⚠️ URL не в белом списке: {url}")
         return None
 
-def parse_price_generic(html: str) -> Optional[float]:
-    """Универсальный парсер (ищет любые цифры с валютой)"""
-    import re
-    soup = BeautifulSoup(html, 'lxml')
-    text = soup.get_text()
-    # Ищем паттерны типа "1 200 руб", "1200.00 BYN"
-    matches = re.findall(r'(\d[\d\s]*\.?\d*)\s*(?:руб|BYN|Br|₽)', text, re.IGNORECASE)
-    if matches:
-        return clean_price(matches[0])
+    # --- ПОПЫТКА 1: Напрямую без прокси ---
+    logger.info(f"📡 Запрос напрямую: {url[:50]}...")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT, allow_redirects=True) as response:
+                if response.status == 200:
+                    html = await response.text()
+                    is_blocked, reason = is_blocked_content(html)
+
+                    if not is_blocked:
+                        return html  # Успех напрямую!
+
+                    logger.warning(f"🛑 Прямой запрос заблокирован ({reason}). Переключаюсь на ScraperAPI...")
+                else:
+                    logger.warning(f"⚠️ Прямой запрос вернул статус {response.status}. Переключаюсь на ScraperAPI...")
+    except Exception as e:
+        logger.warning(f"🌐 Ошибка прямого подключения ({type(e).__name__}). Пробуем через ScraperAPI...")
+
+    # --- ПОПЫТКА 2: Через ScraperAPI (Резервный план) ---
+    if not SCRAPER_API_KEY:
+        logger.error("❌ ScraperAPI Ключ (SCRAPER_API_KEY) не найден в конфигурации! Пропуск прокси.")
+        return None
+
+    # Формируем URL запроса к прокси по документации ScraperAPI
+    # quote_plus кодирует символы вроде / и : чтобы их понял API
+    proxy_url = f"http://api.scraperapi.com/?api_key={SCRAPER_API_KEY}&url={quote_plus(url)}"
+
+    logger.info(f"🔄 Попытка через ScraperAPI для: {url[:40]}...")
+    try:
+        # Для ScraperAPI таймаут лучше взять побольше (около 30 сек), так как они внутри себя могут перебирать прокси
+        async with aiohttp.ClientSession() as session:
+            async with session.get(proxy_url, timeout=30) as response:
+                if response.status == 200:
+                    html = await response.text()
+                    is_blocked, reason = is_blocked_content(html)
+
+                    if not is_blocked:
+                        logger.info(f"🎉 ScraperAPI успешно обошел блокировку для {url[:40]}!")
+                        return html
+
+                    logger.error(f"❌ Даже ScraperAPI вернул заглушку блокировки ({reason})")
+                else:
+                    logger.error(f"❌ Ошибка ScraperAPI. Статус-код: {response.status}")
+    except Exception as e:
+        logger.error(f"💥 Критическая ошибка при запросе через ScraperAPI: {e}")
+
     return None
 
 
-def clean_price(text: str) -> Optional[float]:
-    """
-    Извлекает минимальную цену из текста.
-    Поддерживает: '3 183,10 – 3 970,00 б.р.', '1200.00 BYN', '999 руб'
-    """
+def extract_price_from_text(text: str) -> Optional[float]:
+    """Извлекает минимальную цену из текста"""
     import re
     if not text:
         return None
 
-    # Ищем все числа с разделителями (пробел/запятая/точка)
-    # Паттерн: одна или более цифр, возможно с разделителями тысяч и десятичными
-    pattern = r'(\d+(?:[\s\.]?\d{3})*(?:[,.]\d+)?)'
+    pattern = r'(\d+(?:[\s\.]?\\d{3})*(?:[,.]\d+)?)'
     matches = re.findall(pattern, text)
 
     if not matches:
         return None
 
-    # Берём первое найденное число (минимальное в диапазоне)
     price_str = matches[0]
-
-    # Удаляем пробелы (разделители тысяч) и заменяем запятую на точку
     price_str = price_str.replace(' ', '').replace(',', '.')
 
     try:
@@ -240,25 +300,56 @@ def clean_price(text: str) -> Optional[float]:
 
 
 async def get_price(url: str) -> Optional[float]:
+    """Получение и парсинг цены товара"""
     html = await fetch_page(url)
     if not html:
         return None
 
-    from urllib.parse import urlparse
     domain = urlparse(url).netloc
+    soup = BeautifulSoup(html, "html.parser")
 
-    if '1k.by' in domain:
-        price = parse_price_1kby(html)
-    elif 'shop.by' in domain:
-        price = parse_price_shopby(html)
-    elif '5element' in domain:
-        price = parse_price_5element(html)
-    else:
-        price = parse_price_generic(html)
+    try:
+        if '1k.by' in domain:
+            price_element = soup.find("span", class_="price") or soup.find("div", class_="price")
+            if price_element:
+                return extract_price_from_text(price_element.text)
 
-    # 🔍 Детальный лог для отладки
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.info(f"🔍 {domain}: price={price}, HTML snippet: {html[300:600] if html else 'None'}")
+            alt_price = soup.find(meta={"property": "product:price:amount"})
+            if alt_price:
+                return float(alt_price["content"])
 
-    return price
+        elif 'shop.by' in domain:
+            price_element = soup.find("span", class_="price__value") or soup.find("span",
+                                                                                  class_="PriceBlock__priceValue")
+            if price_element:
+                return extract_price_from_text(price_element.text)
+
+            price_meta = soup.find(meta={"itemprop": "price"})
+            if price_meta:
+                return float(price_meta["content"])
+
+    except Exception as e:
+        logger.error(f"💥 Ошибка разбора HTML структуры для {url[:40]}...: {e}")
+
+    return None
+
+
+async def get_product_name(url: str) -> str:
+    """Получение названия товара для инициализации в БД"""
+    html = await fetch_page(url)
+    if not html:
+        return "Неизвестный товар (Ошибка загрузки)"
+
+    soup = BeautifulSoup(html, "html.parser")
+    try:
+        h1 = soup.find("h1")
+        if h1:
+            return h1.text.strip()
+
+        meta_title = soup.find(meta={"property": "og:title"})
+        if meta_title:
+            return meta_title["content"].strip()
+    except Exception:
+        pass
+
+    return "Товар без названия"

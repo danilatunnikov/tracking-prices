@@ -12,7 +12,7 @@ ALLOWED_DOMAINS = [
 ]
 
 REQUEST_TIMEOUT = 10
-CHECK_INTERVAL = 3600
+CHECK_INTERVAL = 900
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -27,3 +27,5 @@ BOT_COMMANDS = {
     "menu": "🏠 Показать главное меню",
     "help": "❓ Помощь и информация"
 }
+
+SCRAPER_API_KEY = os.getenv("SCRAPER_API_KEY")
