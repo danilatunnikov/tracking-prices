@@ -225,7 +225,7 @@ async def handle_url(message: types.Message):
         )
         return
 
-    # 🔥 ВОТ ЭТОЙ СТРОКИ НЕ ХВАТАЕТ:
+    # Скачиваем страницу ОДИН РАЗ и используем для цены и названия
     html = await fetch_page(url)
 
     if not html:
@@ -235,7 +235,15 @@ async def handle_url(message: types.Message):
         )
         return
 
-    # Получаем цену
+    # Получаем цену из уже скачанного html (без второго запроса)
+    from parser import get_price, get_product_name
+    from urllib.parse import urlparse
+    from bs4 import BeautifulSoup
+
+    domain = urlparse(url).netloc
+    soup = BeautifulSoup(html, "html.parser")
+
+    # --- Цена ---
     current_price = await get_price(url)
 
     if current_price is None:
@@ -245,16 +253,8 @@ async def handle_url(message: types.Message):
         )
         return
 
-    # Извлекаем название товара
-    from parser import get_product_name
-    product_name = get_product_name(url, html) or "Товар"
-
-    print(f"🔍 URL: {url}")
-    print(f"🔍 Извлечённое название: {product_name}")
-
-    if product_name == "Товар" or not product_name:
-        print("⚠️ Название не извлечено, используется 'Товар'")
-        product_name = "Товар"
+    # --- Название: get_product_name принимает только url ---
+    product_name = await get_product_name(url) or "Товар"
     # Сохраняем товар
     await add_item(message.from_user.id, url, product_name)
     await update_price(url, current_price)
