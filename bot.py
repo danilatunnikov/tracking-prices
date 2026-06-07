@@ -17,7 +17,6 @@ load_dotenv()
 
 
 class CustomFormatter(logging.Formatter):
-    """Кастомный форматирщик логов с эмодзи для удобства чтения в Docker/Render"""
 
     grey = "\x1b[38;20m"
     yellow = "\x1b[33;20m"

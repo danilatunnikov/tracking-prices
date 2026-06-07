@@ -16,6 +16,26 @@ from aiogram.exceptions import TelegramBadRequest
 
 router = Router()
 
+def format_items_text(items: list) -> str:
+    text = "📦 <b>Мои товары</b>\n"
+    text += f"<i>Отслеживается: {len(items)} шт.</i>\n"
+    text += "─" * 28 + "\n\n"
+
+    for i, item in enumerate(items, 1):
+        product_name = escape(item['product_name']) if item['product_name'] else "Товар"
+        price_str = f"<b>{item['last_price']:.2f} BYN</b>" if item['last_price'] else "<i>нет данных</i>"
+        status = "🟢" if item['last_price'] else "🟡"
+
+        text += f"{status} <b>{product_name}</b>\n"
+        text += f"💰 {price_str}"
+
+        if item['updated_at']:
+            text += f"  •  🕐 <i>{item['updated_at'][:16]}</i>"
+
+        text += f"\n🔗 <a href=\"{escape(item['url'])}\">Открыть в магазине</a>\n\n"
+
+    return text
+
 # --- КОМАНДЫ ---
 
 @router.message(Command("start"))
@@ -109,30 +129,30 @@ async def cmd_my(message: types.Message):
         )
         return
 
-    # Формируем текст списка
-    text = "📦 <b>Ваши товары:</b>\n\n"
+    text = format_items_text(items)
+    # text = "📦 <b>Ваши товары:</b>\n\n"
 
-    for i, item in enumerate(items, 1):
-        # Статус (зелёный если есть цена, жёлтый если нет)
-        status_emoji = "🟢" if item['last_price'] else "🟡"
-
-        # Форматируем цену
-        price_str = f"{item['last_price']:.2f} BYN" if item['last_price'] else "???"
-
-        # Название товара (экранируем HTML-символы для безопасности)
-        product_name = escape(item['product_name']) if item['product_name'] else "Товар"
-
-        # Добавляем строку товара
-        text += f"{i}. {status_emoji} <b>{product_name}</b>\n"
-
-        # Полная ссылка (кликабельная)
-        text += f"🔗 <a href=\"{escape(item['url'])}\">Открыть товар</a>\n"
-
-        # Цена и дата обновления
-        text += f"💰 {price_str}"
-        if item['updated_at']:
-            text += f" • 🕐 {item['updated_at'][:16]}"
-        text += "\n\n"
+    # for i, item in enumerate(items, 1):
+    #     # Статус (зелёный если есть цена, жёлтый если нет)
+    #     status_emoji = "🟢" if item['last_price'] else "🟡"
+    #
+    #     # Форматируем цену
+    #     price_str = f"{item['last_price']:.2f} BYN" if item['last_price'] else "???"
+    #
+    #     # Название товара (экранируем HTML-символы для безопасности)
+    #     product_name = escape(item['product_name']) if item['product_name'] else "Товар"
+    #
+    #     # Добавляем строку товара
+    #     text += f"{i}. {status_emoji} <b>{product_name}</b>\n"
+    #
+    #     # Полная ссылка (кликабельная)
+    #     text += f"🔗 <a href=\"{escape(item['url'])}\">Открыть товар</a>\n"
+    #
+    #     # Цена и дата обновления
+    #     text += f"💰 {price_str}"
+    #     if item['updated_at']:
+    #         text += f" • 🕐 {item['updated_at'][:16]}"
+    #     text += "\n\n"
 
     # Создаём inline-клавиатуру с кнопками удаления
     keyboard = get_items_list_keyboard(items)
@@ -143,6 +163,7 @@ async def cmd_my(message: types.Message):
         reply_markup=keyboard,
         parse_mode="HTML"
     )
+
 
 
 @router.message(Command("history"))
@@ -189,7 +210,7 @@ async def cmd_help(message: types.Message):
         "1️⃣ Найдите товар на 1k.by / shop.by\n"
         "2️⃣ Скопируйте ссылку на страницу товара\n"
         "3️⃣ Нажмите «🔍 Отследить цену» и отправьте ссылку\n"
-        "4️⃣ Бот будет проверять цену каждый час\n"
+        "4️⃣ Бот будет проверять цену каждый день\n"
         "5️⃣ При изменении цены — вы получите уведомление!\n\n"
         "🗑 Управление товарами:\n"
         "• «📦 Мои товары» — просмотр и удаление\n"
@@ -284,25 +305,23 @@ async def cb_refresh(callback: types.CallbackQuery):
         await callback.answer("📭 У вас нет товаров", show_alert=True)
         return
 
-    # Формируем текст
-    text = "📦 <b>Ваши товары:</b>\n\n"
+    text = format_items_text(items)
+    # text = "📦 <b>Ваши товары:</b>\n\n"
+    #
+    # for i, item in enumerate(items, 1):
+    #     status_emoji = "🟢" if item['last_price'] else "🟡"
+    #     price_str = f"{item['last_price']:.2f} BYN" if item['last_price'] else "???"
+    #     product_name = escape(item['product_name']) if item['product_name'] else "Товар"
+    #
+    #     text += f"{i}. {status_emoji} <b>{product_name}</b>\n"
+    #     text += f"🔗 <a href=\"{escape(item['url'])}\">Открыть товар</a>\n"
+    #     text += f"💰 {price_str}"
+    #     if item['updated_at']:
+    #         text += f" • 🕐 {item['updated_at'][:16]}"
+    #     text += "\n\n"
 
-    for i, item in enumerate(items, 1):
-        status_emoji = "🟢" if item['last_price'] else "🟡"
-        price_str = f"{item['last_price']:.2f} BYN" if item['last_price'] else "???"
-        product_name = escape(item['product_name']) if item['product_name'] else "Товар"
-
-        text += f"{i}. {status_emoji} <b>{product_name}</b>\n"
-        text += f"🔗 <a href=\"{escape(item['url'])}\">Открыть товар</a>\n"
-        text += f"💰 {price_str}"
-        if item['updated_at']:
-            text += f" • 🕐 {item['updated_at'][:16]}"
-        text += "\n\n"
-
-    # Создаём клавиатуру
     keyboard = get_items_list_keyboard(items)
 
-    # Пытаемся отредактировать сообщение
     try:
         await callback.message.edit_text(
             text,
@@ -310,11 +329,9 @@ async def cb_refresh(callback: types.CallbackQuery):
             parse_mode="HTML"
         )
     except TelegramBadRequest as e:
-        # Если сообщение не изменилось — просто показываем уведомление
         if "message is not modified" in str(e):
             await callback.answer("✅ Список актуален!", show_alert=False)
         else:
-            # Другие ошибки логируем
             raise e
 
 

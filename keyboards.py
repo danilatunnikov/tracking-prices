@@ -66,16 +66,23 @@ def get_items_list_keyboard(items: list) -> InlineKeyboardMarkup:
 
     for item in items:
         key = hashlib.md5(item['url'].encode('utf-8')).hexdigest()[:8]
-        short_url = item['url'].split('/')[-1][:30]  # Короткое название
+
+        name = item.get('product_name') or 'Товар'
+        short_name = (name[:25] + '…') if len(name) > 25 else name
+
         keyboard.append([
             InlineKeyboardButton(
-                text=f"🗑 {short_url}...",
+                text=f"🗑 {short_name}",
                 callback_data=f"del_{key}"
+            ),
+            InlineKeyboardButton(
+                text="📊 История",
+                callback_data=f"hist_{key}"
             )
         ])
 
     keyboard.append([
-        InlineKeyboardButton(text="🔄 Обновить список", callback_data="my_refresh")
+        InlineKeyboardButton(text="🔄 Обновить", callback_data="my_refresh")
     ])
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
