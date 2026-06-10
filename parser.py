@@ -44,7 +44,7 @@ def is_blocked_content(html: str, url: str = "") -> tuple[bool, Optional[str]]:
         return False, None
 
     block_markers = [
-        "captcha",
+        # "captcha",
         "cloudflare",
         "робот",
         "доступ ограничен",
